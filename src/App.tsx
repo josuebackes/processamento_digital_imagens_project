@@ -8,32 +8,25 @@ import MenuItem from "@mui/material/MenuItem";
 import Button from "@mui/material/Button";
 
 /**
- * Componente principal do aplicativo de Processamento Digital de Imagens.
- * Permite abrir, exibir, transformar e aplicar filtros em imagens usando React, TypeScript e MUI.
- * Implementa operações morfológicas clássicas (erosão, dilatação, abertura, fechamento).
- * Todas as operações são realizadas via canvas HTML, pixel a pixel, e seguem o padrão de uso de elemento estruturante cruz (N4).
+ * Aplicativo de Processamento Digital de Imagens.
+ * Implementa filtros, transformações geométricas e operações morfológicas.
  */
 function App() {
-  // Estados para controle dos menus superiores
+  // Estados para controle da aplicação
   const [anchorElArquivo, setAnchorElArquivo] =
     React.useState<null | HTMLElement>(null);
   const [anchorElTransf, setAnchorElTransf] =
     React.useState<null | HTMLElement>(null);
   const [anchorElFiltros, setAnchorElFiltros] =
     React.useState<null | HTMLElement>(null);
-
-  // Estado para armazenar a imagem original carregada
   const [imagemOriginal, setImagemOriginal] = React.useState<string | null>(
     null
   );
-  // Estado para indicar se a imagem foi modificada (após filtro ou transformação)
   const [imagemModificada, setImagemModificada] =
     React.useState<boolean>(false);
-  // Estado para armazenar a imagem transformada/filtrada
   const [imagemTransformada, setImagemTransformada] = React.useState<
     string | null
   >(null);
-  // Referência para o canvas oculto usado nas manipulações
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
 
   // ===================================================================
@@ -41,10 +34,7 @@ function App() {
   // ===================================================================
 
   /**
-   * Função utilitária para carregar uma imagem no canvas e executar uma manipulação.
-   * @param {string} src - Base64 da imagem a ser carregada.
-   * @param {(ctx: CanvasRenderingContext2D, img: HTMLImageElement) => void} callback - Função que recebe o contexto do canvas e a imagem carregada.
-   * Garante que a manipulação seja feita sobre a imagem já desenhada no canvas.
+   * Carrega uma imagem no canvas e executa uma manipulação.
    */
   const carregarNoCanvas = (
     src: string,
@@ -68,15 +58,25 @@ function App() {
   };
 
   /**
-   * Função utilitária para converter ImageData para tons de cinza (grayscale).
-   * Aplica a média ponderada dos canais RGB em cada pixel.
-   * @param {Uint8ClampedArray} data - Array de dados da imagem (ImageData.data).
+   * Converte ImageData para tons de cinza usando média ponderada.
    */
   const converterParaGrayscale = (data: Uint8ClampedArray) => {
     for (let i = 0; i < data.length; i += 4) {
-      // Média ponderada: 0.299*R + 0.587*G + 0.114*B (mesma fórmula do handleGrayscale)
       const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
       data[i] = data[i + 1] = data[i + 2] = gray;
+    }
+  };
+
+  /**
+   * Binariza uma imagem em grayscale aplicando threshold.
+   */
+  const binarizarImagem = (
+    data: Uint8ClampedArray,
+    threshold: number = 128
+  ) => {
+    for (let i = 0; i < data.length; i += 4) {
+      const value = data[i] < threshold ? 0 : 255;
+      data[i] = data[i + 1] = data[i + 2] = value;
     }
   };
 
@@ -100,7 +100,7 @@ function App() {
   };
 
   /**
-   * Handler para remover a imagem carregada e limpar todos os estados relacionados.
+   * Remove a imagem carregada e limpa todos os estados.
    */
   const handleRemoverImagem = () => {
     setImagemOriginal(null);
@@ -110,7 +110,7 @@ function App() {
   };
 
   /**
-   * Handler para remover apenas as alterações, restaurando a imagem original.
+   * Remove apenas as alterações, restaurando a imagem original.
    */
   const handleRemoverAlteracoes = () => {
     setImagemTransformada(null);
@@ -119,7 +119,7 @@ function App() {
   };
 
   /**
-   * Handler para salvar a imagem transformada/filtrada como arquivo PNG.
+   * Salva a imagem transformada como arquivo PNG.
    */
   const handleSalvarImagem = () => {
     if (imagemTransformada && imagemModificada) {
@@ -136,15 +136,14 @@ function App() {
   // ===================================================================
 
   /**
-   * Handler para transladar (mover) a imagem.
-   * Exemplo: desloca 50px para direita e 30px para baixo.
+   * Translada a imagem por um offset fixo.
    */
   const handleTransladar = () => {
     if (!imagemOriginal) return;
     carregarNoCanvas(imagemOriginal, (ctx, img) => {
       ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
       ctx.save();
-      ctx.translate(50, 30); // valores fixos, pode ser parametrizado
+      ctx.translate(50, 30);
       ctx.drawImage(img, 0, 0);
       ctx.restore();
     });
@@ -152,7 +151,7 @@ function App() {
   };
 
   /**
-   * Handler para rotacionar a imagem em 90 graus.
+   * Rotaciona a imagem em 90 graus.
    */
   const handleRotacionar = () => {
     if (!imagemOriginal) return;
@@ -169,7 +168,7 @@ function App() {
   };
 
   /**
-   * Handler para espelhar a imagem horizontalmente.
+   * Espelha a imagem horizontalmente.
    */
   const handleEspelhar = () => {
     if (!imagemOriginal) return;
@@ -185,7 +184,7 @@ function App() {
   };
 
   /**
-   * Handler para aumentar (zoom in) a imagem em 1.5x.
+   * Aumenta a imagem (zoom in) em 1.5x.
    */
   const handleAumentar = () => {
     if (!imagemOriginal) return;
@@ -201,7 +200,7 @@ function App() {
   };
 
   /**
-   * Handler para diminuir (zoom out) a imagem em 0.5x.
+   * Diminui a imagem (zoom out) em 0.5x.
    */
   const handleDiminuir = () => {
     if (!imagemOriginal) return;
@@ -217,12 +216,11 @@ function App() {
   };
 
   // ===================================================================
-  // FILTROS DE BRILHO E CONTRASTE
+  // FILTROS E OPERAÇÕES MORFOLÓGICAS
   // ===================================================================
 
   /**
-   * Handler para aplicar filtro de brilho na imagem.
-   * O valor de brilho é fixo para exemplo, mas pode ser parametrizado.
+   * Aplica filtro de brilho na imagem.
    */
   const handleBrilho = () => {
     if (!imagemOriginal) return;
@@ -230,7 +228,7 @@ function App() {
       ctx.drawImage(img, 0, 0);
       const imageData = ctx.getImageData(0, 0, img.width, img.height);
       const data = imageData.data;
-      const brilho = 40; // exemplo: aumenta brilho
+      const brilho = 40;
       for (let i = 0; i < data.length; i += 4) {
         data[i] = Math.max(0, Math.min(255, data[i] + brilho));
         data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + brilho));
@@ -244,8 +242,7 @@ function App() {
   };
 
   /**
-   * Handler para aplicar filtro de contraste na imagem.
-   * O valor de contraste é fixo para exemplo, mas pode ser parametrizado.
+   * Aplica filtro de contraste na imagem.
    */
   const handleContraste = () => {
     if (!imagemOriginal) return;
@@ -253,7 +250,7 @@ function App() {
       ctx.drawImage(img, 0, 0);
       const imageData = ctx.getImageData(0, 0, img.width, img.height);
       const data = imageData.data;
-      const contraste = 30; // exemplo: aumenta contraste
+      const contraste = 30;
       const fator = (259 * (contraste + 255)) / (255 * (259 - contraste));
       for (let i = 0; i < data.length; i += 4) {
         data[i] = Math.max(0, Math.min(255, fator * (data[i] - 128) + 128));
@@ -274,8 +271,7 @@ function App() {
   };
 
   /**
-   * Handler para aplicar filtro de tons de cinza (grayscale) na imagem.
-   * Utiliza a função utilitária converterParaGrayscale para manter consistência.
+   * Converte imagem para tons de cinza.
    */
   const handleGrayscale = () => {
     if (!imagemOriginal) return;
@@ -283,24 +279,15 @@ function App() {
       ctx.drawImage(img, 0, 0);
       const imageData = ctx.getImageData(0, 0, img.width, img.height);
       const data = imageData.data;
-
-      // Usar a função utilitária para conversão grayscale
       converterParaGrayscale(data);
-
       ctx.putImageData(imageData, 0, 0);
     });
     setAnchorElFiltros(null);
   };
 
-  // ===================================================================
-  // FILTROS DE DETECÇÃO DE BORDAS E SUAVIZAÇÃO
-  // ===================================================================
-
   /**
-   * Handler para aplicar detecção de bordas usando o operador de Roberts.
-   * Utiliza dois kernels 2x2 para detectar mudanças diagonais na imagem.
-   * Primeiro converte para grayscale, depois aplica o gradiente de Roberts.
-   * O resultado destaca as bordas da imagem.
+   * Detecção de bordas usando operador de Roberts.
+   * Aplica gradiente diagonal em imagem grayscale.
    */
   const handleRoberts = () => {
     if (!imagemOriginal) return;
@@ -311,36 +298,28 @@ function App() {
       const width = img.width;
       const height = img.height;
 
-      // Primeiro converter para grayscale usando a função utilitária
       converterParaGrayscale(data);
 
-      // Criar cópia dos dados em grayscale para cálculos
       const grayData = new Array(width * height);
       for (let i = 0; i < data.length; i += 4) {
         const idx = i / 4;
-        grayData[idx] = data[i]; // Já está em grayscale após conversão
+        grayData[idx] = data[i];
       }
 
-      // Aplicar operadores de Roberts
       for (let y = 0; y < height - 1; y++) {
         for (let x = 0; x < width - 1; x++) {
-          // Operador Gx (diagonal principal): [1, 0; 0, -1]
+          // Operadores de Roberts: Gx e Gy
           const gx =
             grayData[y * width + x] - grayData[(y + 1) * width + (x + 1)];
-
-          // Operador Gy (diagonal secundária): [0, 1; -1, 0]
           const gy =
             grayData[y * width + (x + 1)] - grayData[(y + 1) * width + x];
 
-          // Magnitude do gradiente: sqrt(Gx² + Gy²)
           const magnitude = Math.sqrt(gx * gx + gy * gy);
-
-          // Aplicar resultado aos canais RGB
           const pixelIndex = (y * width + x) * 4;
           const value = Math.max(0, Math.min(255, magnitude));
-          data[pixelIndex] = value; // R
-          data[pixelIndex + 1] = value; // G
-          data[pixelIndex + 2] = value; // B
+          data[pixelIndex] = value;
+          data[pixelIndex + 1] = value;
+          data[pixelIndex + 2] = value;
         }
       }
 
@@ -350,9 +329,7 @@ function App() {
   };
 
   /**
-   * Handler para aplicar filtro de passa baixa (Blur/Suavização).
-   * Utiliza kernel 3x3 (filtro da média) para suavizar a imagem, conforme o material teórico.
-   * Cada pixel é substituído pela média dos seus vizinhos.
+   * Filtro passa-baixa usando kernel 3x3 (filtro da média).
    */
   const handlePassaBaixa = () => {
     if (!imagemOriginal) return;
@@ -363,17 +340,12 @@ function App() {
       const width = img.width;
       const height = img.height;
 
-      // Kernel de suavização 3x3 (filtro da média - 9 pixels)
-      const kernel = Array(9).fill(1 / 9); // Todos os 9 valores = 1/9
-
-      // Criar cópia dos dados originais
+      const kernel = Array(9).fill(1 / 9);
       const originalData = new Uint8ClampedArray(data);
 
-      // Aplicar convolução com janela 3x3
       for (let y = 1; y < height - 1; y++) {
         for (let x = 1; x < width - 1; x++) {
           for (let c = 0; c < 3; c++) {
-            // RGB apenas
             let sum = 0;
             for (let ky = -1; ky <= 1; ky++) {
               for (let kx = -1; kx <= 1; kx++) {
@@ -393,15 +365,9 @@ function App() {
     setAnchorElFiltros(null);
   };
 
-  // ===================================================================
-  // OPERAÇÕES MORFOLÓGICAS
-  // ===================================================================
-
   /**
-   * Handler para aplicar erosão morfológica.
-   * Reduz regiões escuras (objetos), usando elemento estruturante cruz (N4, 3x3).
-   * Opera sobre a imagem em tons de cinza.
-   * Cada pixel recebe o valor MÍNIMO dos vizinhos definidos pelo elemento estruturante.
+   * Erosão morfológica: reduz regiões brancas aplicando o mínimo local.
+   * Utiliza elemento estruturante 3x3 quadrado sobre imagem binarizada.
    */
   const handleErosao = () => {
     if (!imagemOriginal) return;
@@ -412,19 +378,22 @@ function App() {
       const width = img.width;
       const height = img.height;
 
-      // Converter para grayscale
       converterParaGrayscale(data);
+      binarizarImagem(data, 128);
 
-      // Elemento estruturante cruz (N4): centro, cima, baixo, esquerda, direita
+      // Elemento estruturante 3x3 quadrado
       const offsets = [
-        [0, 0], // centro
-        [-1, 0], // cima
-        [1, 0], // baixo
-        [0, -1], // esquerda
-        [0, 1], // direita
+        [-1, -1],
+        [-1, 0],
+        [-1, 1],
+        [0, -1],
+        [0, 0],
+        [0, 1],
+        [1, -1],
+        [1, 0],
+        [1, 1],
       ];
 
-      // Cópia dos dados para leitura (imagem original antes da modificação)
       const original = new Uint8ClampedArray(data);
       for (let y = 1; y < height - 1; y++) {
         for (let x = 1; x < width - 1; x++) {
@@ -445,10 +414,8 @@ function App() {
   };
 
   /**
-   * Handler para aplicar dilatação morfológica.
-   * Expande regiões claras (objetos), usando elemento estruturante cruz (N4, 3x3).
-   * Opera sobre a imagem em tons de cinza.
-   * Cada pixel recebe o valor MÁXIMO dos vizinhos definidos pelo elemento estruturante.
+   * Dilatação morfológica: expande regiões brancas aplicando o máximo local.
+   * Utiliza elemento estruturante 3x3 quadrado sobre imagem binarizada.
    */
   const handleDilatacao = () => {
     if (!imagemOriginal) return;
@@ -459,19 +426,22 @@ function App() {
       const width = img.width;
       const height = img.height;
 
-      // Converter para grayscale
       converterParaGrayscale(data);
+      binarizarImagem(data, 128);
 
-      // Elemento estruturante cruz (N4): centro, cima, baixo, esquerda, direita
+      // Elemento estruturante 3x3 quadrado
       const offsets = [
-        [0, 0], // centro
-        [-1, 0], // cima
-        [1, 0], // baixo
-        [0, -1], // esquerda
-        [0, 1], // direita
+        [-1, -1],
+        [-1, 0],
+        [-1, 1],
+        [0, -1],
+        [0, 0],
+        [0, 1],
+        [1, -1],
+        [1, 0],
+        [1, 1],
       ];
 
-      // Cópia dos dados para leitura (imagem original antes da modificação)
       const original = new Uint8ClampedArray(data);
       for (let y = 1; y < height - 1; y++) {
         for (let x = 1; x < width - 1; x++) {
@@ -492,10 +462,8 @@ function App() {
   };
 
   /**
-   * Handler para aplicar abertura morfológica.
-   * Abertura = Erosão seguida de Dilatação, usando elemento estruturante cruz (N4, 3x3).
-   * Remove detalhes pequenos e suaviza contornos, conforme teoria de Morfologia Matemática.
-   * Opera sobre a imagem em tons de cinza.
+   * Abertura morfológica: erosão seguida de dilatação.
+   * Remove ruídos pequenos e suaviza contornos.
    */
   const handleAbertura = () => {
     if (!imagemOriginal) return;
@@ -506,20 +474,23 @@ function App() {
       const width = img.width;
       const height = img.height;
 
-      // Converter para grayscale
       converterParaGrayscale(data);
+      binarizarImagem(data, 128);
 
-      // Elemento estruturante cruz (N4): centro, cima, baixo, esquerda, direita
+      // Elemento estruturante 3x3 quadrado
       const offsets = [
-        [0, 0], // centro
-        [-1, 0], // cima
-        [1, 0], // baixo
-        [0, -1], // esquerda
-        [0, 1], // direita
+        [-1, -1],
+        [-1, 0],
+        [-1, 1],
+        [0, -1],
+        [0, 0],
+        [0, 1],
+        [1, -1],
+        [1, 0],
+        [1, 1],
       ];
 
-      // --- Erosão ---
-      // Aplica erosão usando elemento estruturante cruz (N4)
+      // Erosão
       const originalErosao = new Uint8ClampedArray(data);
       const tempErosao = new Uint8ClampedArray(originalErosao);
       for (let y = 1; y < height - 1; y++) {
@@ -527,7 +498,7 @@ function App() {
           let min = 255;
           for (const [dy, dx] of offsets) {
             const idx = ((y + dy) * width + (x + dx)) * 4;
-            min = Math.min(min, originalErosao[idx]); // só canal R
+            min = Math.min(min, originalErosao[idx]);
           }
           const outIdx = (y * width + x) * 4;
           tempErosao[outIdx] =
@@ -538,15 +509,14 @@ function App() {
         }
       }
 
-      // --- Dilatação sobre o resultado da erosão ---
-      // Aplica dilatação sobre o resultado da erosão
+      // Dilatação sobre o resultado da erosão
       const tempDilatacao = new Uint8ClampedArray(tempErosao);
       for (let y = 1; y < height - 1; y++) {
         for (let x = 1; x < width - 1; x++) {
           let max = 0;
           for (const [dy, dx] of offsets) {
             const idx = ((y + dy) * width + (x + dx)) * 4;
-            max = Math.max(max, tempErosao[idx]); // só canal R
+            max = Math.max(max, tempErosao[idx]);
           }
           const outIdx = (y * width + x) * 4;
           tempDilatacao[outIdx] =
@@ -557,7 +527,6 @@ function App() {
         }
       }
 
-      // Copia o resultado final para imageData
       for (let i = 0; i < data.length; i++) {
         data[i] = tempDilatacao[i];
       }
@@ -568,10 +537,8 @@ function App() {
   };
 
   /**
-   * Handler para aplicar fechamento morfológico.
-   * Fechamento = Dilatação seguida de Erosão, usando elemento estruturante cruz (N4, 3x3).
-   * Preenche pequenos buracos e conecta regiões próximas, conforme teoria de Morfologia Matemática.
-   * Opera sobre a imagem em tons de cinza.
+   * Fechamento morfológico: dilatação seguida de erosão.
+   * Preenche pequenos buracos e conecta regiões próximas.
    */
   const handleFechamento = () => {
     if (!imagemOriginal) return;
@@ -582,20 +549,23 @@ function App() {
       const width = img.width;
       const height = img.height;
 
-      // Converter para grayscale
       converterParaGrayscale(data);
+      binarizarImagem(data, 128);
 
-      // Elemento estruturante cruz (N4): centro, cima, baixo, esquerda, direita
+      // Elemento estruturante 3x3 quadrado
       const offsets = [
-        [0, 0], // centro
-        [-1, 0], // cima
-        [1, 0], // baixo
-        [0, -1], // esquerda
-        [0, 1], // direita
+        [-1, -1],
+        [-1, 0],
+        [-1, 1],
+        [0, -1],
+        [0, 0],
+        [0, 1],
+        [1, -1],
+        [1, 0],
+        [1, 1],
       ];
 
-      // --- Dilatação ---
-      // Aplica dilatação usando elemento estruturante cruz (N4)
+      // Dilatação
       const originalDilatacao = new Uint8ClampedArray(data);
       const tempDilatacao = new Uint8ClampedArray(originalDilatacao);
       for (let y = 1; y < height - 1; y++) {
@@ -603,7 +573,7 @@ function App() {
           let max = 0;
           for (const [dy, dx] of offsets) {
             const idx = ((y + dy) * width + (x + dx)) * 4;
-            max = Math.max(max, originalDilatacao[idx]); // só canal R
+            max = Math.max(max, originalDilatacao[idx]);
           }
           const outIdx = (y * width + x) * 4;
           tempDilatacao[outIdx] =
@@ -614,15 +584,14 @@ function App() {
         }
       }
 
-      // --- Erosão sobre o resultado da dilatação ---
-      // Aplica erosão sobre o resultado da dilatação
+      // Erosão sobre o resultado da dilatação
       const tempErosao = new Uint8ClampedArray(tempDilatacao);
       for (let y = 1; y < height - 1; y++) {
         for (let x = 1; x < width - 1; x++) {
           let min = 255;
           for (const [dy, dx] of offsets) {
             const idx = ((y + dy) * width + (x + dx)) * 4;
-            min = Math.min(min, tempDilatacao[idx]); // só canal R
+            min = Math.min(min, tempDilatacao[idx]);
           }
           const outIdx = (y * width + x) * 4;
           tempErosao[outIdx] =
@@ -633,7 +602,6 @@ function App() {
         }
       }
 
-      // Copia o resultado final para imageData
       for (let i = 0; i < data.length; i++) {
         data[i] = tempErosao[i];
       }
@@ -643,14 +611,9 @@ function App() {
     setAnchorElFiltros(null);
   };
 
-  // ===================================================================
-  // OPERAÇÃO DE AFINAMENTO (ESQUELETIZAÇÃO)
-  // ===================================================================
-
   /**
-   * Handler para aplicar afinamento (esqueletização) usando o algoritmo de Zhang-Suen.
-   * O algoritmo é aplicado sobre uma imagem binária (preto e branco).
-   * O resultado é um esqueleto fino do objeto.
+   * Esqueletização usando algoritmo de Zhang-Suen.
+   * Aplica afinamento iterativo em imagem binária até convergência.
    */
   const handleZhangSuen = () => {
     if (!imagemOriginal) return;
@@ -663,16 +626,15 @@ function App() {
         const width = img.width;
         const height = img.height;
 
-        // 1. Converter para grayscale
         converterParaGrayscale(data);
 
-        // 2. Binarizar (threshold fixo 128)
+        // Binarizar: preto = 1, branco = 0
         for (let i = 0; i < data.length; i += 4) {
-          const v = data[i] < 128 ? 1 : 0; // preto = 1, branco = 0
+          const v = data[i] < 128 ? 1 : 0;
           data[i] = data[i + 1] = data[i + 2] = v * 255;
         }
 
-        // 3. Criar matriz binária (1 = preto, 0 = branco)
+        // Criar matriz binária
         const bin: number[][] = [];
         for (let y = 0; y < height; y++) {
           const row: number[] = [];
@@ -687,6 +649,7 @@ function App() {
         while (changed) {
           changed = false;
           const toRemove: [number, number][] = [];
+
           // Passo 1
           for (let y = 1; y < height - 1; y++) {
             for (let x = 1; x < width - 1; x++) {
@@ -803,11 +766,11 @@ function App() {
           for (const [y, x] of toRemove2) bin[y][x] = 0;
         }
 
-        // 4. Atualizar imageData com resultado
+        // Atualizar imageData com resultado
         for (let y = 0; y < height; y++) {
           for (let x = 0; x < width; x++) {
             const idx = (y * width + x) * 4;
-            const v = bin[y][x] ? 0 : 255; // preto = 1 -> 0 (preto), branco = 0 -> 255 (branco)
+            const v = bin[y][x] ? 0 : 255;
             data[idx] = data[idx + 1] = data[idx + 2] = v;
           }
         }
@@ -818,7 +781,7 @@ function App() {
   };
 
   // ===================================================================
-  // HANDLERS DE MENU
+  // CONTROLES DE INTERFACE
   // ===================================================================
 
   /**
@@ -839,7 +802,6 @@ function App() {
       setter(null);
     };
 
-  // Ref para input file oculto (usado para abrir imagem)
   const inputFileRef = React.useRef<HTMLInputElement>(null);
 
   return (
@@ -1009,7 +971,6 @@ function App() {
               <Typography variant="subtitle1">Imagem Transformada</Typography>
             )}
           </Box>
-          {/* Canvas oculto para manipulação */}
           <canvas ref={canvasRef} style={{ display: "none" }} />
         </Box>
       </Box>
