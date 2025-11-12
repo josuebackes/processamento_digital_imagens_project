@@ -521,7 +521,7 @@ function App() {
       // --- Erosão ---
       // Aplica erosão usando elemento estruturante cruz (N4)
       const originalErosao = new Uint8ClampedArray(data);
-      const tempErosao = new Uint8ClampedArray(data.length);
+      const tempErosao = new Uint8ClampedArray(originalErosao);
       for (let y = 1; y < height - 1; y++) {
         for (let x = 1; x < width - 1; x++) {
           let min = 255;
@@ -597,7 +597,7 @@ function App() {
       // --- Dilatação ---
       // Aplica dilatação usando elemento estruturante cruz (N4)
       const originalDilatacao = new Uint8ClampedArray(data);
-      const tempDilatacao = new Uint8ClampedArray(data.length);
+      const tempDilatacao = new Uint8ClampedArray(originalDilatacao);
       for (let y = 1; y < height - 1; y++) {
         for (let x = 1; x < width - 1; x++) {
           let max = 0;
