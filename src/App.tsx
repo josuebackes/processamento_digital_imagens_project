@@ -19,6 +19,8 @@ function App() {
     React.useState<null | HTMLElement>(null);
   const [anchorElFiltros, setAnchorElFiltros] =
     React.useState<null | HTMLElement>(null);
+  const [anchorElCaracteristicas, setAnchorElCaracteristicas] =
+    React.useState<null | HTMLElement>(null);
   const [imagemOriginal, setImagemOriginal] = React.useState<string | null>(
     null
   );
@@ -27,6 +29,10 @@ function App() {
   const [imagemTransformada, setImagemTransformada] = React.useState<
     string | null
   >(null);
+  const [resultadoDomino, setResultadoDomino] = React.useState<{
+    pontosSuperior: number;
+    pontosInferior: number;
+  } | null>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
 
   // ===================================================================
@@ -80,6 +86,325 @@ function App() {
     }
   };
 
+  /**
+   * Elemento estruturante 3x3 padrão para operações morfológicas.
+   */
+  const ELEMENTO_ESTRUTURANTE_3X3 = [
+    [-1, -1],
+    [-1, 0],
+    [-1, 1],
+    [0, -1],
+    [0, 0],
+    [0, 1],
+    [1, -1],
+    [1, 0],
+    [1, 1],
+  ];
+
+  /**
+   * Aplica erosão morfológica em dados de imagem já binarizados.
+   * Função utilitária reutilizável para operações morfológicas.
+   */
+  const aplicarErosao = (
+    data: Uint8ClampedArray,
+    width: number,
+    height: number,
+    offsets = ELEMENTO_ESTRUTURANTE_3X3
+  ): Uint8ClampedArray => {
+    const result = new Uint8ClampedArray(data);
+    const original = new Uint8ClampedArray(data);
+
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        let min = 255;
+        for (const [dy, dx] of offsets) {
+          const idx = ((y + dy) * width + (x + dx)) * 4;
+          min = Math.min(min, original[idx]);
+        }
+        const outIdx = (y * width + x) * 4;
+        result[outIdx] = result[outIdx + 1] = result[outIdx + 2] = min;
+        result[outIdx + 3] = original[outIdx + 3];
+      }
+    }
+
+    return result;
+  };
+
+  /**
+   * Aplica dilatação morfológica em dados de imagem já binarizados.
+   * Função utilitária reutilizável para operações morfológicas.
+   */
+  const aplicarDilatacao = (
+    data: Uint8ClampedArray,
+    width: number,
+    height: number,
+    offsets = ELEMENTO_ESTRUTURANTE_3X3
+  ): Uint8ClampedArray => {
+    const result = new Uint8ClampedArray(data);
+    const original = new Uint8ClampedArray(data);
+
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        let max = 0;
+        for (const [dy, dx] of offsets) {
+          const idx = ((y + dy) * width + (x + dx)) * 4;
+          max = Math.max(max, original[idx]);
+        }
+        const outIdx = (y * width + x) * 4;
+        result[outIdx] = result[outIdx + 1] = result[outIdx + 2] = max;
+        result[outIdx + 3] = original[outIdx + 3];
+      }
+    }
+
+    return result;
+  };
+
+  const aplicarAbertura = (
+    data: Uint8ClampedArray,
+    width: number,
+    height: number,
+    offsets = ELEMENTO_ESTRUTURANTE_3X3
+  ): Uint8ClampedArray => {
+    // Passo 1: Erosão
+    const erosionResult = aplicarErosao(data, width, height, offsets);
+    // Passo 2: Dilatação sobre o resultado da erosão
+    const dilationResult = aplicarDilatacao(
+      erosionResult,
+      width,
+      height,
+      offsets
+    );
+    return dilationResult;
+  };
+
+  const aplicarFechamento = (
+    data: Uint8ClampedArray,
+    width: number,
+    height: number,
+    offsets = ELEMENTO_ESTRUTURANTE_3X3
+  ): Uint8ClampedArray => {
+    // Passo 1: Dilatação
+    const dilationResult = aplicarDilatacao(data, width, height, offsets);
+    // Passo 2: Erosão sobre o resultado da dilatação
+    const erosionResult = aplicarErosao(dilationResult, width, height, offsets);
+    return erosionResult;
+  };
+
+  // ===================================================================
+  // FUNÇÕES DE EXTRAÇÃO DE CARACTERÍSTICAS
+  // ===================================================================
+
+  /**
+   * Rotula componentes conectados em uma imagem binária.
+   * Identifica e conta objetos separados.
+   */
+  const rotularComponentes = (
+    data: Uint8ClampedArray,
+    width: number,
+    height: number
+  ): { labels: number[][]; componentes: number } => {
+    const labels: number[][] = Array(height)
+      .fill(null)
+      .map(() => Array(width).fill(0));
+    let componenteAtual = 1;
+
+    // Vizinhança de 8 pixels
+    const dx = [-1, -1, -1, 0, 0, 1, 1, 1];
+    const dy = [-1, 0, 1, -1, 1, -1, 0, 1];
+
+    const floodFill = (startX: number, startY: number, label: number) => {
+      const stack: [number, number][] = [[startX, startY]];
+
+      while (stack.length > 0) {
+        const [x, y] = stack.pop()!;
+
+        if (x < 0 || x >= width || y < 0 || y >= height || labels[y][x] !== 0) {
+          continue;
+        }
+
+        const pixelIdx = (y * width + x) * 4;
+        if (data[pixelIdx] !== 0) continue; // Pixel branco, não é objeto
+
+        labels[y][x] = label;
+
+        // Adiciona vizinhos à pilha
+        for (let i = 0; i < 8; i++) {
+          const nx = x + dx[i];
+          const ny = y + dy[i];
+          stack.push([nx, ny]);
+        }
+      }
+    };
+
+    // Percorre a imagem procurando pixels pretos não rotulados
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const pixelIdx = (y * width + x) * 4;
+        if (data[pixelIdx] === 0 && labels[y][x] === 0) {
+          floodFill(x, y, componenteAtual);
+          componenteAtual++;
+        }
+      }
+    }
+
+    return { labels, componentes: componenteAtual - 1 };
+  };
+
+  /**
+   * Filtra componentes por área mínima para remover ruído.
+   */
+  const filtrarComponentesPorArea = (
+    labels: number[][],
+    componentes: number,
+    areaMinima: number = 20
+  ): { labelsLimpos: number[][]; componentesValidos: number } => {
+    const width = labels[0].length;
+    const height = labels.length;
+
+    // Conta área de cada componente
+    const areas: number[] = new Array(componentes + 1).fill(0);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (labels[y][x] > 0) {
+          areas[labels[y][x]]++;
+        }
+      }
+    }
+
+    // Remove componentes pequenos
+    const labelsLimpos: number[][] = Array(height)
+      .fill(null)
+      .map(() => Array(width).fill(0));
+    let novoLabel = 1;
+    const mapeamento: number[] = new Array(componentes + 1).fill(0);
+
+    for (let i = 1; i <= componentes; i++) {
+      if (areas[i] >= areaMinima) {
+        mapeamento[i] = novoLabel++;
+      }
+    }
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (labels[y][x] > 0) {
+          labelsLimpos[y][x] = mapeamento[labels[y][x]];
+        }
+      }
+    }
+
+    return { labelsLimpos, componentesValidos: novoLabel - 1 };
+  };
+
+  const detectarLinhaDivisoria = (height: number): number => {
+    return Math.floor(height / 2);
+  };
+
+  // ===================================================================
+  // ANÁLISE DE DOMINÓ
+  // ===================================================================
+
+  /**
+   * Análise completa de dominó: segmentação, divisão e contagem de pontos.
+   * Implementa o pipeline completo seguindo a teoria de extração de características.
+   */
+  const handleAnaliseDomino = () => {
+    if (!imagemOriginal) return;
+
+    carregarNoCanvas(imagemOriginal, (ctx, img) => {
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, img.width, img.height);
+      const data = imageData.data;
+      const width = img.width;
+      const height = img.height;
+
+      converterParaGrayscale(data);
+      binarizarImagem(data, 128);
+
+      const dadosLimpos = aplicarAbertura(data, width, height);
+      // Atualiza os dados originais com o resultado da limpeza
+      for (let i = 0; i < data.length; i++) {
+        data[i] = dadosLimpos[i];
+      }
+
+      const linhaDivisoria = detectarLinhaDivisoria(height);
+
+      // Passo 4: Segmentação e rotulação por regiões
+      const dadosSuperior = new Uint8ClampedArray(data.length);
+      const dadosInferior = new Uint8ClampedArray(data.length);
+
+      const margemLinhaDivisoria = 3;
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const idx = (y * width + x) * 4;
+
+          if (y < linhaDivisoria - margemLinhaDivisoria) {
+            // Região superior (bem acima da linha divisória)
+            dadosSuperior[idx] = data[idx];
+            dadosSuperior[idx + 1] = data[idx + 1];
+            dadosSuperior[idx + 2] = data[idx + 2];
+            dadosSuperior[idx + 3] = data[idx + 3];
+            // Limpa região inferior nos dados superior
+            dadosInferior[idx] = 255;
+            dadosInferior[idx + 1] = 255;
+            dadosInferior[idx + 2] = 255;
+            dadosInferior[idx + 3] = 255;
+          } else if (y > linhaDivisoria + margemLinhaDivisoria) {
+            // Região inferior (bem abaixo da linha divisória)
+            dadosInferior[idx] = data[idx];
+            dadosInferior[idx + 1] = data[idx + 1];
+            dadosInferior[idx + 2] = data[idx + 2];
+            dadosInferior[idx + 3] = data[idx + 3];
+            // Limpa região superior nos dados inferior
+            dadosSuperior[idx] = 255;
+            dadosSuperior[idx + 1] = 255;
+            dadosSuperior[idx + 2] = 255;
+            dadosSuperior[idx + 3] = 255;
+          } else {
+            // Região da linha divisória - EXCLUI de ambas as contagens
+            dadosSuperior[idx] = 255;
+            dadosSuperior[idx + 1] = 255;
+            dadosSuperior[idx + 2] = 255;
+            dadosSuperior[idx + 3] = 255;
+
+            dadosInferior[idx] = 255;
+            dadosInferior[idx + 1] = 255;
+            dadosInferior[idx + 2] = 255;
+            dadosInferior[idx + 3] = 255;
+          }
+        }
+      }
+
+      // Passo 5: Rotulação e contagem de componentes
+      const { labels: labelsSuperior, componentes: compSuperior } =
+        rotularComponentes(dadosSuperior, width, height);
+      const { labels: labelsInferior, componentes: compInferior } =
+        rotularComponentes(dadosInferior, width, height);
+
+      // Passo 6: Filtrar por área para remover ruído
+      const { componentesValidos: pontosSuperior } = filtrarComponentesPorArea(
+        labelsSuperior,
+        compSuperior,
+        20
+      );
+      const { componentesValidos: pontosInferiorBruto } =
+        filtrarComponentesPorArea(labelsInferior, compInferior, 20);
+
+      // Ajuste para remover a linha divisória da contagem inferior
+      const pontosInferior = Math.max(0, pontosInferiorBruto - 1);
+
+      // Passo 7: Salvar resultados
+      setResultadoDomino({
+        pontosSuperior,
+        pontosInferior,
+      });
+
+      ctx.putImageData(imageData, 0, 0);
+    });
+
+    setAnchorElCaracteristicas(null);
+  };
+
   // ===================================================================
   // HANDLERS DE ARQUIVO
   // ===================================================================
@@ -92,6 +417,7 @@ function App() {
         setImagemOriginal(e.target?.result as string);
         setImagemTransformada(null);
         setImagemModificada(false);
+        setResultadoDomino(null);
       };
       reader.readAsDataURL(file);
     }
@@ -106,6 +432,7 @@ function App() {
     setImagemOriginal(null);
     setImagemTransformada(null);
     setImagemModificada(false);
+    setResultadoDomino(null);
     setAnchorElArquivo(null);
   };
 
@@ -115,6 +442,7 @@ function App() {
   const handleRemoverAlteracoes = () => {
     setImagemTransformada(null);
     setImagemModificada(false);
+    setResultadoDomino(null);
     setAnchorElArquivo(null);
   };
 
@@ -381,31 +709,11 @@ function App() {
       converterParaGrayscale(data);
       binarizarImagem(data, 128);
 
-      // Elemento estruturante 3x3 quadrado
-      const offsets = [
-        [-1, -1],
-        [-1, 0],
-        [-1, 1],
-        [0, -1],
-        [0, 0],
-        [0, 1],
-        [1, -1],
-        [1, 0],
-        [1, 1],
-      ];
+      const resultado = aplicarErosao(data, width, height);
 
-      const original = new Uint8ClampedArray(data);
-      for (let y = 1; y < height - 1; y++) {
-        for (let x = 1; x < width - 1; x++) {
-          let min = 255;
-          for (const [dy, dx] of offsets) {
-            const idx = ((y + dy) * width + (x + dx)) * 4;
-            min = Math.min(min, original[idx]);
-          }
-          const outIdx = (y * width + x) * 4;
-          data[outIdx] = data[outIdx + 1] = data[outIdx + 2] = min;
-          data[outIdx + 3] = original[outIdx + 3];
-        }
+      // Atualiza os dados com o resultado
+      for (let i = 0; i < data.length; i++) {
+        data[i] = resultado[i];
       }
 
       ctx.putImageData(imageData, 0, 0);
@@ -429,31 +737,11 @@ function App() {
       converterParaGrayscale(data);
       binarizarImagem(data, 128);
 
-      // Elemento estruturante 3x3 quadrado
-      const offsets = [
-        [-1, -1],
-        [-1, 0],
-        [-1, 1],
-        [0, -1],
-        [0, 0],
-        [0, 1],
-        [1, -1],
-        [1, 0],
-        [1, 1],
-      ];
+      const resultado = aplicarDilatacao(data, width, height);
 
-      const original = new Uint8ClampedArray(data);
-      for (let y = 1; y < height - 1; y++) {
-        for (let x = 1; x < width - 1; x++) {
-          let max = 0;
-          for (const [dy, dx] of offsets) {
-            const idx = ((y + dy) * width + (x + dx)) * 4;
-            max = Math.max(max, original[idx]);
-          }
-          const outIdx = (y * width + x) * 4;
-          data[outIdx] = data[outIdx + 1] = data[outIdx + 2] = max;
-          data[outIdx + 3] = original[outIdx + 3];
-        }
+      // Atualiza os dados com o resultado
+      for (let i = 0; i < data.length; i++) {
+        data[i] = resultado[i];
       }
 
       ctx.putImageData(imageData, 0, 0);
@@ -477,58 +765,11 @@ function App() {
       converterParaGrayscale(data);
       binarizarImagem(data, 128);
 
-      // Elemento estruturante 3x3 quadrado
-      const offsets = [
-        [-1, -1],
-        [-1, 0],
-        [-1, 1],
-        [0, -1],
-        [0, 0],
-        [0, 1],
-        [1, -1],
-        [1, 0],
-        [1, 1],
-      ];
+      const resultado = aplicarAbertura(data, width, height);
 
-      // Erosão
-      const originalErosao = new Uint8ClampedArray(data);
-      const tempErosao = new Uint8ClampedArray(originalErosao);
-      for (let y = 1; y < height - 1; y++) {
-        for (let x = 1; x < width - 1; x++) {
-          let min = 255;
-          for (const [dy, dx] of offsets) {
-            const idx = ((y + dy) * width + (x + dx)) * 4;
-            min = Math.min(min, originalErosao[idx]);
-          }
-          const outIdx = (y * width + x) * 4;
-          tempErosao[outIdx] =
-            tempErosao[outIdx + 1] =
-            tempErosao[outIdx + 2] =
-              min;
-          tempErosao[outIdx + 3] = originalErosao[outIdx + 3];
-        }
-      }
-
-      // Dilatação sobre o resultado da erosão
-      const tempDilatacao = new Uint8ClampedArray(tempErosao);
-      for (let y = 1; y < height - 1; y++) {
-        for (let x = 1; x < width - 1; x++) {
-          let max = 0;
-          for (const [dy, dx] of offsets) {
-            const idx = ((y + dy) * width + (x + dx)) * 4;
-            max = Math.max(max, tempErosao[idx]);
-          }
-          const outIdx = (y * width + x) * 4;
-          tempDilatacao[outIdx] =
-            tempDilatacao[outIdx + 1] =
-            tempDilatacao[outIdx + 2] =
-              max;
-          tempDilatacao[outIdx + 3] = tempErosao[outIdx + 3];
-        }
-      }
-
+      // Atualiza os dados com o resultado
       for (let i = 0; i < data.length; i++) {
-        data[i] = tempDilatacao[i];
+        data[i] = resultado[i];
       }
 
       ctx.putImageData(imageData, 0, 0);
@@ -552,58 +793,11 @@ function App() {
       converterParaGrayscale(data);
       binarizarImagem(data, 128);
 
-      // Elemento estruturante 3x3 quadrado
-      const offsets = [
-        [-1, -1],
-        [-1, 0],
-        [-1, 1],
-        [0, -1],
-        [0, 0],
-        [0, 1],
-        [1, -1],
-        [1, 0],
-        [1, 1],
-      ];
+      const resultado = aplicarFechamento(data, width, height);
 
-      // Dilatação
-      const originalDilatacao = new Uint8ClampedArray(data);
-      const tempDilatacao = new Uint8ClampedArray(originalDilatacao);
-      for (let y = 1; y < height - 1; y++) {
-        for (let x = 1; x < width - 1; x++) {
-          let max = 0;
-          for (const [dy, dx] of offsets) {
-            const idx = ((y + dy) * width + (x + dx)) * 4;
-            max = Math.max(max, originalDilatacao[idx]);
-          }
-          const outIdx = (y * width + x) * 4;
-          tempDilatacao[outIdx] =
-            tempDilatacao[outIdx + 1] =
-            tempDilatacao[outIdx + 2] =
-              max;
-          tempDilatacao[outIdx + 3] = originalDilatacao[outIdx + 3];
-        }
-      }
-
-      // Erosão sobre o resultado da dilatação
-      const tempErosao = new Uint8ClampedArray(tempDilatacao);
-      for (let y = 1; y < height - 1; y++) {
-        for (let x = 1; x < width - 1; x++) {
-          let min = 255;
-          for (const [dy, dx] of offsets) {
-            const idx = ((y + dy) * width + (x + dx)) * 4;
-            min = Math.min(min, tempDilatacao[idx]);
-          }
-          const outIdx = (y * width + x) * 4;
-          tempErosao[outIdx] =
-            tempErosao[outIdx + 1] =
-            tempErosao[outIdx + 2] =
-              min;
-          tempErosao[outIdx + 3] = tempDilatacao[outIdx + 3];
-        }
-      }
-
+      // Atualiza os dados com o resultado
       for (let i = 0; i < data.length; i++) {
-        data[i] = tempErosao[i];
+        data[i] = resultado[i];
       }
 
       ctx.putImageData(imageData, 0, 0);
@@ -918,6 +1112,24 @@ function App() {
                 Afinamento (Zhang-Suen)
               </MenuItem>
             </Menu>
+            <Button
+              color="inherit"
+              onClick={handleMenuOpen(setAnchorElCaracteristicas)}
+            >
+              Extração de Características
+            </Button>
+            <Menu
+              anchorEl={anchorElCaracteristicas}
+              open={Boolean(anchorElCaracteristicas)}
+              onClose={handleMenuClose(setAnchorElCaracteristicas)}
+            >
+              <MenuItem
+                onClick={handleAnaliseDomino}
+                disabled={!imagemOriginal}
+              >
+                Análise de Dominó
+              </MenuItem>
+            </Menu>
           </Box>
         </Toolbar>
       </AppBar>
@@ -973,6 +1185,55 @@ function App() {
           </Box>
           <canvas ref={canvasRef} style={{ display: "none" }} />
         </Box>
+
+        {/* Painel de Resultados da Análise de Dominó */}
+        {resultadoDomino && (
+          <Box
+            sx={{
+              mt: 3,
+              p: 2,
+              display: "flex",
+              justifyContent: "center",
+              gap: 4,
+            }}
+          >
+            <Typography
+              variant="h6"
+              sx={{ color: "#1976d2", fontWeight: "bold" }}
+            >
+              Resultado da Análise de Dominó
+            </Typography>
+            <Box sx={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <Box sx={{ textAlign: "center" }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: "bold" }}>
+                  Parte Superior
+                </Typography>
+                <Typography
+                  variant="h4"
+                  sx={{ color: "#d32f2f", fontWeight: "bold" }}
+                >
+                  {resultadoDomino.pontosSuperior}
+                </Typography>
+                <Typography variant="caption">pontos</Typography>
+              </Box>
+              <Typography variant="h3" sx={{ color: "#666" }}>
+                |
+              </Typography>
+              <Box sx={{ textAlign: "center" }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: "bold" }}>
+                  Parte Inferior
+                </Typography>
+                <Typography
+                  variant="h4"
+                  sx={{ color: "#d32f2f", fontWeight: "bold" }}
+                >
+                  {resultadoDomino.pontosInferior}
+                </Typography>
+                <Typography variant="caption">pontos</Typography>
+              </Box>
+            </Box>
+          </Box>
+        )}
       </Box>
     </Box>
   );
